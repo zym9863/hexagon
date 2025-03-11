@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:math' as math;
+import 'package:audioplayers/audioplayers.dart';
 
 void main() {
   runApp(const MyApp());
@@ -33,6 +34,8 @@ class HexagonBouncePage extends StatefulWidget {
 
 // 六边形物理弹跳页面状态
 class _HexagonBouncePageState extends State<HexagonBouncePage> with SingleTickerProviderStateMixin {
+  // 音频播放器
+  final AudioPlayer _audioPlayer = AudioPlayer();
   // 动画控制器
   late AnimationController _controller;
   // 六边形旋转角度
@@ -84,6 +87,7 @@ class _HexagonBouncePageState extends State<HexagonBouncePage> with SingleTicker
   @override
   void dispose() {
     _controller.dispose();
+    _audioPlayer.dispose();
     super.dispose();
   }
 
@@ -339,7 +343,9 @@ class _HexagonBouncePageState extends State<HexagonBouncePage> with SingleTicker
         ),
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: () {
+        onPressed: () async {
+          // 播放音效
+          await _audioPlayer.play(AssetSource('sound-effect-1741695647399.mp3'));
           // 重置小球位置和速度
           setState(() {
             _ballPosition = const Offset(0, 0);
