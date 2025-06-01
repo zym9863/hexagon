@@ -1,0 +1,167 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*' # 当推送以 'v' 开头的标签时触发（如 v1.0.0）
+  workflow_dispatch: # 允许手动触发
+
+jobs:
+  build-android:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.27.0'
+          channel: 'stable'
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Build Android APK
+        run: flutter build apk --release --split-per-abi
+
+      - name: Upload Android artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-apk
+          path: build/app/outputs/flutter-apk/app-*.apk
+
+  build-windows:
+    name: Build Windows EXE
+    runs-on: windows-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.27.0'
+          channel: 'stable'
+
+      - name: Enable Windows desktop
+        run: flutter config --enable-windows-desktop
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Build Windows app
+        run: flutter build windows --release
+
+      - name: Create Windows ZIP
+        run: |
+          Compress-Archive -Path "build/windows/x64/runner/Release/*" -DestinationPath "hexagon-windows.zip"
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-exe
+          path: hexagon-windows.zip
+
+  release:
+    name: Create Release
+    needs: [build-android, build-windows]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download Android artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: android-apk
+          path: ./android-artifacts
+
+      - name: Download Windows artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-exe
+          path: ./windows-artifacts
+
+      - name: Get version from tag
+        id: get_version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ steps.get_version.outputs.VERSION }}
+          release_name: Hexagon ${{ steps.get_version.outputs.VERSION }}
+          body: |
+            ## 🎉 Hexagon ${{ steps.get_version.outputs.VERSION }}
+            
+            ### 📱 Android
+            - `app-arm64-v8a-release.apk` - 适用于 64位 ARM 设备
+            - `app-armeabi-v7a-release.apk` - 适用于 32位 ARM 设备  
+            - `app-x86_64-release.apk` - 适用于 64位 x86 设备
+            
+            ### 💻 Windows
+            - `hexagon-windows.zip` - Windows 桌面应用程序
+            
+            ### 安装说明
+            **Android**: 下载对应设备架构的 APK 文件并安装
+            **Windows**: 下载 ZIP 文件，解压后运行 `hexagon.exe`
+            
+            ---
+            自动构建时间: ${{ github.event.head_commit.timestamp }}
+          draft: false
+          prerelease: false
+
+      - name: Upload Android APK (ARM64)
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./android-artifacts/app-arm64-v8a-release.apk
+          asset_name: hexagon-${{ steps.get_version.outputs.VERSION }}-arm64-v8a.apk
+          asset_content_type: application/vnd.android.package-archive
+
+      - name: Upload Android APK (ARMv7)
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./android-artifacts/app-armeabi-v7a-release.apk
+          asset_name: hexagon-${{ steps.get_version.outputs.VERSION }}-armeabi-v7a.apk
+          asset_content_type: application/vnd.android.package-archive
+
+      - name: Upload Android APK (x86_64)
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./android-artifacts/app-x86_64-release.apk
+          asset_name: hexagon-${{ steps.get_version.outputs.VERSION }}-x86_64.apk
+          asset_content_type: application/vnd.android.package-archive
+
+      - name: Upload Windows ZIP
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./windows-artifacts/hexagon-windows.zip
+          asset_name: hexagon-${{ steps.get_version.outputs.VERSION }}-windows.zip
+          asset_content_type: application/zip
